@@ -424,6 +424,7 @@ const CONFIG = {
   CLIENT_ID: '528669121553-7ld3tnj8h1d5ga3c0jua3corttnkep17.apps.googleusercontent.com',
   API_KEY:   'AIzaSyAA_OuXATyvAW5KCyN_zpytfUgDEwx4y24',
   SCOPES:    'https://www.googleapis.com/auth/drive.file',
+  APP_ID:    '528669121553',
 };
 
 /* ==================================================================
@@ -574,6 +575,7 @@ async function openPickerFlow(){
       .addView(google.picker.ViewId.UPLOAD)
       .setOAuthToken(state.accessToken)
       .setDeveloperKey(CONFIG.API_KEY)
+      .setAppId(CONFIG.APP_ID)
       .setCallback(onPickerResult)
       .setTitle('Select or upload your vault file')
       .build();
