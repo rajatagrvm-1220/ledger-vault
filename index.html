@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — your account vault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     DESIGN TOKENS
+     Palette: dark ink + warm brass, like a bound ledger / safe.
+     Serif for headings (ledger feel), humanist sans for body/UI,
+     monospace ONLY for password/account-number values (fixed-width
+     matters for reading those, not decoration).
+     ============================================================ */
+  :root{
+    --ink:        #14181F;
+    --ink-2:      #1B2029;
+    --slate:      #232A35;
+    --slate-2:    #2B323D;
+    --line:       #3A424F;
+    --paper:      #EDE7D9;
+    --paper-dim:  #B9B2A0;
+    --brass:      #B08D57;
+    --brass-hi:   #C9A76B;
+    --rust:       #C1553D;
+    --moss:       #6F8F63;
+    --font-serif: 'Source Serif 4', Georgia, serif;
+    --font-sans:  'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono:  'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--ink);
+    background-image:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(176,141,87,0.08), transparent 60%);
+    color: var(--paper);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  a{ color: var(--brass-hi); }
+  button{ font-family: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible{
+    outline: 2px solid var(--brass-hi);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; transition: none !important; }
+  }
+
+  /* ---------- shell / chrome ---------- */
+  .shell{
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 28px 20px 80px;
+  }
+  .chrome{
+    display:flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 30px;
+  }
+  .wordmark{
+    font-family: var(--font-serif);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: 0.2px;
+    color: var(--paper);
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .wordmark .mark{
+    width:20px;height:20px;
+    border:1.6px solid var(--brass-hi);
+    border-radius: 3px;
+    position:relative;
+    flex-shrink:0;
+  }
+  .wordmark .mark::after{
+    content:"";
+    position:absolute;
+    left:50%; top:52%;
+    width:2px;height:7px;
+    background:var(--brass-hi);
+    transform: translate(-50%,-30%);
+  }
+  .chrome-status{
+    font-size: 13px;
+    color: var(--paper-dim);
+    display:flex;
+    align-items:center;
+    gap: 14px;
+  }
+  .dot{
+    display:inline-block;
+    width:7px;height:7px;
+    border-radius:50%;
+    background: var(--moss);
+    margin-right:6px;
+    vertical-align:middle;
+  }
+  .dot.locked{ background: var(--rust); }
+  .dot.unsynced{ background: var(--brass-hi); }
+
+  /* ---------- card ---------- */
+  .card{
+    background: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 34px;
+  }
+  .card + .card{ margin-top: 18px; }
+  .card-narrow{ max-width: 420px; margin: 60px auto; }
+
+  h1.title{
+    font-family: var(--font-serif);
+    font-size: 26px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    line-height:1.25;
+  }
+  p.lede{
+    color: var(--paper-dim);
+    font-size: 14.5px;
+    line-height: 1.55;
+    margin: 0 0 22px;
+  }
+  p.lede strong{ color: var(--paper); }
+
+  .field{ margin-bottom: 16px; }
+  .field label{
+    display:block;
+    font-size: 12.5px;
+    color: var(--paper-dim);
+    margin-bottom: 6px;
+  }
+  .field input, .field textarea{
+    width:100%;
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 14.5px;
+    font-family: inherit;
+  }
+  .field input.mono, .field textarea.mono{ font-family: var(--font-mono); }
+  .field-error{
+    color: var(--rust);
+    font-size: 13px;
+    margin-top: 8px;
+    display:none;
+  }
+  .field-error.show{ display:block; }
+  .hint{ color: var(--paper-dim); font-size: 12.5px; margin-top: 8px; line-height:1.5; }
+
+  /* buttons */
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--paper);
+    padding: 9px 16px;
+    border-radius: 4px;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: border-color .15s, background .15s;
+  }
+  .btn:hover{ border-color: var(--brass-hi); }
+  .btn-primary{
+    background: var(--brass);
+    border-color: var(--brass);
+    color: #1A1408;
+    font-weight: 600;
+  }
+  .btn-primary:hover{ background: var(--brass-hi); border-color: var(--brass-hi); }
+  .btn-primary:disabled{ opacity:0.5; cursor:default; }
+  .btn-danger{ border-color: var(--rust); color: var(--rust); }
+  .btn-danger:hover{ background: rgba(193,85,61,0.12); }
+  .btn-quiet{ border-color: transparent; color: var(--paper-dim); padding: 9px 10px; }
+  .btn-quiet:hover{ color: var(--paper); border-color: var(--line); }
+  .btn-block{ width:100%; justify-content:center; }
+  .btn-sm{ padding: 6px 11px; font-size: 12.5px; }
+
+  .row-actions{ display:flex; gap:8px; }
+  .toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .search{
+    flex: 1;
+    min-width: 180px;
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    padding: 9px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  /* ---------- table ---------- */
+  table.vault-table{
+    width:100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  table.vault-table thead th{
+    text-align:left;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--paper-dim);
+    padding: 0 12px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.vault-table tbody td{
+    padding: 13px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+    color: var(--paper);
+  }
+  table.vault-table tbody tr:last-child td{ border-bottom: none; }
+  table.vault-table tbody tr:hover{ background: rgba(255,255,255,0.02); }
+  .cell-site{ font-weight: 500; }
+  .cell-sub{ color: var(--paper-dim); font-size: 12.5px; margin-top:2px; }
+  .mono-val{ font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.3px; }
+  .secret-wrap{ display:flex; align-items:center; gap:8px; }
+  .secret-dots{ letter-spacing: 2px; }
+  .icon-btn{
+    background:none; border:none; color: var(--paper-dim);
+    padding:3px; border-radius:3px; display:inline-flex;
+  }
+  .icon-btn:hover{ color: var(--brass-hi); }
+  .icon-btn:focus-visible{ outline: 2px solid var(--brass-hi); }
+  .copied-flash{ color: var(--moss); font-size: 11.5px; margin-left:6px; }
+
+  .empty-state{
+    text-align:center;
+    padding: 60px 20px;
+    color: var(--paper-dim);
+  }
+  .empty-state .glyph{ font-size: 28px; margin-bottom: 14px; opacity: 0.6; }
+
+  /* ---------- modal ---------- */
+  .modal-backdrop{
+    position: fixed; inset:0;
+    background: rgba(10,12,16,0.72);
+    display:none;
+    align-items:center; justify-content:center;
+    padding: 20px;
+    z-index: 50;
+  }
+  .modal-backdrop.open{ display:flex; }
+  .modal{
+    background: var(--slate-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 28px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .modal h2{
+    font-family: var(--font-serif);
+    font-weight:600;
+    font-size:20px;
+    margin: 0 0 18px;
+  }
+  .modal-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 22px; }
+
+  .top-strip{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom: 20px; flex-wrap:wrap; gap:10px;
+  }
+  .last-saved{ font-size: 12.5px; color: var(--paper-dim); }
+
+  footer.note{
+    text-align:center;
+    color: var(--paper-dim);
+    font-size: 12.5px;
+    margin-top: 40px;
+    line-height:1.6;
+  }
+
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  @media (max-width: 640px){
+    .modal-grid{ grid-template-columns: 1fr; }
+    table.vault-table thead{ display:none; }
+    table.vault-table tbody td{ display:block; border-bottom:none; padding: 4px 0; }
+    table.vault-table tbody tr{ display:block; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="chrome">
+    <div class="wordmark"><span class="mark"></span>Ledger</div>
+    <div class="chrome-status" id="statusBar" style="display:none;">
+      <span><span class="dot" id="statusDot"></span><span id="statusText">Locked</span></span>
+      <button class="btn btn-quiet btn-sm" id="lockBtn" style="display:none;">Lock</button>
+    </div>
+  </div>
+
+  <!-- STEP 1: connect -->
+  <div class="view active" id="view-connect">
+    <div class="card card-narrow">
+      <h1 class="title">Open your vault</h1>
+      <p class="lede">Your account details, encrypted in your browser, stored in a file on your own Google Drive. No server ever sees your data or your password.</p>
+      <button class="btn btn-primary btn-block" id="connectBtn">Connect Google Drive</button>
+      <p class="hint" id="connectHint"></p>
+    </div>
+  </div>
+
+  <!-- STEP 2: unlock / create password -->
+  <div class="view" id="view-password">
+    <div class="card card-narrow">
+      <h1 class="title" id="pwTitle">Unlock vault</h1>
+      <p class="lede" id="pwLede">Enter your master password to decrypt <strong id="pwFileName"></strong>.</p>
+
+      <div class="field">
+        <label for="pwInput">Master password</label>
+        <input type="password" id="pwInput" class="mono" autocomplete="off">
+      </div>
+      <div class="field" id="pwConfirmField" style="display:none;">
+        <label for="pwConfirm">Confirm master password</label>
+        <input type="password" id="pwConfirm" class="mono" autocomplete="off">
+      </div>
+      <div class="field-error" id="pwError"></div>
+
+      <button class="btn btn-primary btn-block" id="unlockBtn">Unlock</button>
+      <p class="hint" id="pwHint">If you forget this password, there is no way to recover your data — it is never stored or sent anywhere.</p>
+    </div>
+  </div>
+
+  <!-- STEP 4: vault -->
+  <div class="view" id="view-vault">
+    <div class="top-strip">
+      <span class="last-saved" id="lastSaved"></span>
+      <div class="row-actions">
+        <button class="btn btn-quiet btn-sm" id="switchFileBtn">Switch vault file</button>
+        <button class="btn btn-sm" id="changePwBtn">Change master password</button>
+        <button class="btn btn-primary btn-sm" id="saveBtn">Save changes</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" class="search" id="searchInput" placeholder="Search website, username, nominee…">
+      <button class="btn btn-primary btn-sm" id="addEntryBtn">Add account</button>
+    </div>
+
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div id="tableWrap"></div>
+    </div>
+  </div>
+
+  <footer class="note">
+    Encrypted with AES-256-GCM · key derived with PBKDF2 (300,000 iterations) · nothing leaves your browser unencrypted.
+  </footer>
+</div>
+
+<!-- Entry modal -->
+<div class="modal-backdrop" id="entryModalBackdrop">
+  <div class="modal">
+    <h2 id="entryModalTitle">Add account</h2>
+    <div class="modal-grid">
+      <div class="field"><label>Website</label><input id="f-website" placeholder="example.com"></div>
+      <div class="field"><label>Username</label><input id="f-username"></div>
+      <div class="field"><label>Account number</label><input id="f-account" class="mono"></div>
+      <div class="field"><label>Password</label><input id="f-password" class="mono"></div>
+      <div class="field"><label>Nominee</label><input id="f-nominee"></div>
+      <div class="field" style="grid-column:1/-1;"><label>Notes</label><textarea id="f-notes" rows="2"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="entryCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="entrySaveBtn">Save entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change password modal -->
+<div class="modal-backdrop" id="pwModalBackdrop">
+  <div class="modal">
+    <h2>Change master password</h2>
+    <p class="lede" style="margin-bottom:16px;">This re-encrypts your entire vault with a new password immediately. You'll need to click "Save changes" afterward to write it to Drive.</p>
+    <div class="field"><label>Current password</label><input type="password" id="cp-current" class="mono"></div>
+    <div class="field"><label>New password</label><input type="password" id="cp-new" class="mono"></div>
+    <div class="field"><label>Confirm new password</label><input type="password" id="cp-confirm" class="mono"></div>
+    <div class="field-error" id="cpError"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cpCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="cpSaveBtn">Change password</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
+<script>
+/* ==================================================================
+   CONFIG — fill these in from your Google Cloud project.
+   See SETUP.md for exact steps. Neither value is a secret: they are
+   a public client ID and a restricted API key, the same as any
+   single-page app uses. The real secret is your master password,
+   which never appears in this file or leaves your browser.
+   ================================================================== */
+const CONFIG = {
+  CLIENT_ID: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
+  API_KEY:   'YOUR_API_KEY',
+  SCOPES:    'https://www.googleapis.com/auth/drive.file',
+};
+
+/* ==================================================================
+   STATE
+   ================================================================== */
+const state = {
+  accessToken: null,
+  fileId: null,
+  fileName: null,
+  isNewFile: false,
+  vaultKey: null,      // CryptoKey, held only while unlocked
+  salt: null,           // Uint8Array, current salt in use
+  iterations: 300000,
+  entries: [],          // decrypted entries, only in memory
+  dirty: false,
+  editingId: null,
+  pickerLoaded: false,
+  pickerApiKeyReady: false,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function showView(id){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+function setStatus({locked, unsynced}){
+  $('statusBar').style.display = 'flex';
+  const dot = $('statusDot');
+  dot.className = 'dot' + (locked ? ' locked' : (unsynced ? ' unsynced' : ''));
+  $('statusText').textContent = locked ? 'Locked' : (unsynced ? 'Unsaved changes' : 'Unlocked');
+  $('lockBtn').style.display = locked ? 'none' : 'inline-flex';
+}
+
+/* ==================================================================
+   CRYPTO — Web Crypto API, AES-256-GCM + PBKDF2-SHA256
+   ================================================================== */
+function randomBytes(len){
+  return crypto.getRandomValues(new Uint8Array(len));
+}
+function bufToBase64(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+function base64ToBuf(b64){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function deriveKey(password, salt, iterations){
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptVault(entries, key){
+  const iv = randomBytes(12);
+  const enc = new TextEncoder();
+  const plaintext = enc.encode(JSON.stringify({ entries }));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+  return { iv, ciphertext };
+}
+
+async function decryptVault(ciphertextBuf, iv, key){
+  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertextBuf);
+  const dec = new TextDecoder();
+  const parsed = JSON.parse(dec.decode(plainBuf));
+  return parsed.entries || [];
+}
+
+function buildVaultFile({ salt, iterations, iv, ciphertext }){
+  return JSON.stringify({
+    app: 'ledger-vault',
+    version: 1,
+    kdf: 'PBKDF2-SHA256',
+    iterations,
+    salt: bufToBase64(salt),
+    iv: bufToBase64(iv),
+    ciphertext: bufToBase64(ciphertext),
+  });
+}
+
+/* ==================================================================
+   GOOGLE AUTH + DRIVE + PICKER
+   ================================================================== */
+let tokenClient;
+
+function initGis(){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CONFIG.CLIENT_ID,
+    scope: CONFIG.SCOPES,
+    callback: (resp) => {
+      if (resp.error){
+        $('connectHint').textContent = 'Sign-in was cancelled or failed. Try again.';
+        return;
+      }
+      state.accessToken = resp.access_token;
+      if (state.fileId) {
+        loadFileAndProceed();
+      } else {
+        openPickerFlow();
+      }
+    },
+  });
+}
+
+function requestAccess(){
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+let pickerApiLoaded = false;
+function loadPickerApi(){
+  return new Promise((resolve) => {
+    if (pickerApiLoaded) return resolve();
+    gapi.load('picker', () => { pickerApiLoaded = true; resolve(); });
+  });
+}
+
+async function openPickerFlow(){
+  await loadPickerApi();
+  const picker = new google.picker.PickerBuilder()
+    .addView(new google.picker.DocsView().setIncludeFolders(false).setMimeTypes('application/json,text/plain'))
+    .addView(google.picker.ViewId.UPLOAD)
+    .setOAuthToken(state.accessToken)
+    .setDeveloperKey(CONFIG.API_KEY)
+    .setCallback(onPickerResult)
+    .setTitle('Select or upload your vault file')
+    .build();
+  picker.setVisible(true);
+}
+
+function onPickerResult(data){
+  if (data.action !== google.picker.Action.PICKED) return;
+  const doc = data.docs[0];
+  state.fileId = doc.id;
+  state.fileName = doc.name;
+  localStorage.setItem('ledger_fileId', doc.id);
+  localStorage.setItem('ledger_fileName', doc.name);
+  loadFileAndProceed();
+}
+
+async function driveGetFile(fileId){
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${state.accessToken}` } }
+  );
+  if (res.status === 401) throw { authExpired: true };
+  if (!res.ok && res.status !== 404) throw new Error('Could not read the file from Drive.');
+  const text = await res.text();
+  return text;
+}
+
+async function driveSaveFile(fileId, contentString){
+  const boundary = 'ledgerboundary';
+  const metadata = { mimeType: 'application/json' };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${contentString}\r\n--${boundary}--`;
+
+  const res = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${state.accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
+  if (!res.ok) throw new Error('Could not save to Drive.');
+  return res.json();
+}
+
+async function loadFileAndProceed(){
+  try {
+    const raw = await driveGetFile(state.fileId);
+    if (!raw || !raw.trim()){
+      state.isNewFile = true;
+      showPasswordView({ creating: true });
+      return;
+    }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch(e){
+      $('pwError').textContent = '';
+      state.isNewFile = false;
+      state._rawFallback = raw;
+    }
+    if (parsed && parsed.app === 'ledger-vault'){
+      state.isNewFile = false;
+      state._loadedFile = parsed;
+      showPasswordView({ creating: false });
+    } else {
+      // Existing file has content but isn't a recognized vault — treat as new,
+      // but warn before we ever overwrite it.
+      state.isNewFile = true;
+      state._nonVaultExistingContent = raw;
+      showPasswordView({ creating: true, warnOverwrite: true });
+    }
+  } catch(err){
+    if (err && err.authExpired){
+      requestAccess();
+      return;
+    }
+    alert(err.message || 'Something went wrong reading the file.');
+  }
+}
+
+/* ==================================================================
+   FLOW: connect -> pick -> password -> vault
+   ================================================================== */
+function showPasswordView({ creating, warnOverwrite }){
+  showView('view-password');
+  $('pwFileName').textContent = state.fileName || 'your vault file';
+  $('pwConfirmField').style.display = creating ? 'block' : 'none';
+  $('pwTitle').textContent = creating ? 'Set a master password' : 'Unlock vault';
+  $('pwLede').innerHTML = creating
+    ? `This will become the password for <strong>${escapeHtml(state.fileName||'this file')}</strong>. Choose something strong — there's no recovery if it's lost.`
+    : `Enter your master password to decrypt <strong>${escapeHtml(state.fileName||'this file')}</strong>.`;
+  $('pwError').textContent = '';
+  $('pwInput').value = '';
+  $('pwConfirm').value = '';
+  if (warnOverwrite){
+    $('pwError').textContent = 'This file already has content that isn\u2019t a Ledger vault. Continuing will replace it once you save. Pick a different file if that\u2019s not what you want.';
+    $('pwError').classList.add('show');
+  } else {
+    $('pwError').classList.remove('show');
+  }
+  setTimeout(() => $('pwInput').focus(), 50);
+}
+
+async function handleUnlock(){
+  const pw = $('pwInput').value;
+  const err = $('pwError');
+  err.classList.remove('show');
+
+  if (!pw){ err.textContent = 'Enter a password.'; err.classList.add('show'); return; }
+
+  if ($('pwConfirmField').style.display !== 'none'){
+    if (pw.length < 8){ err.textContent = 'Use at least 8 characters.'; err.classList.add('show'); return; }
+    if (pw !== $('pwConfirm').value){ err.textContent = 'Passwords don\u2019t match.'; err.classList.add('show'); return; }
+    // Creating a brand-new vault
+    state.salt = randomBytes(16);
+    state.iterations = 300000;
+    state.vaultKey = await deriveKey(pw, state.salt, state.iterations);
+    state.entries = [];
+    enterVault();
+    await persistVault(); // write the empty encrypted vault immediately
+    return;
+  }
+
+  // Unlocking existing vault
+  try {
+    const file = state._loadedFile;
+    const salt = base64ToBuf(file.salt);
+    const iv = base64ToBuf(file.iv);
+    const iterations = file.iterations || 300000;
+    const key = await deriveKey(pw, salt, iterations);
+    const ciphertext = base64ToBuf(file.ciphertext);
+    const entries = await decryptVault(ciphertext.buffer, iv, key);
+    state.salt = salt;
+    state.iterations = iterations;
+    state.vaultKey = key;
+    state.entries = entries;
+    enterVault();
+  } catch(e){
+    err.textContent = 'Wrong password, or the file is corrupted.';
+    err.classList.add('show');
+  }
+}
+
+function enterVault(){
+  showView('view-vault');
+  setStatus({ locked: false, unsynced: false });
+  renderTable();
+}
+
+function lockVault(){
+  state.vaultKey = null;
+  state.entries = [];
+  state.dirty = false;
+  showView('view-password');
+  $('pwInput').value = '';
+  showPasswordView({ creating: false });
+  setStatus({ locked: true });
+}
+
+async function persistVault(){
+  const { iv, ciphertext } = await encryptVault(state.entries, state.vaultKey);
+  const fileString = buildVaultFile({ salt: state.salt, iterations: state.iterations, iv, ciphertext });
+  await driveSaveFile(state.fileId, fileString);
+  state.dirty = false;
+  setStatus({ locked: false, unsynced: false });
+  $('lastSaved').textContent = 'Saved ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+
+function markDirty(){
+  state.dirty = true;
+  setStatus({ locked: false, unsynced: true });
+}
+
+/* ==================================================================
+   RENDERING
+   ================================================================== */
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderTable(){
+  const q = ($('searchInput').value || '').toLowerCase();
+  const rows = state.entries
+    .filter(e => !q || [e.website, e.username, e.nominee].some(v => (v||'').toLowerCase().includes(q)))
+    .sort((a,b) => (a.website||'').localeCompare(b.website||''));
+
+  const wrap = $('tableWrap');
+  if (!state.entries.length){
+    wrap.innerHTML = `<div class="empty-state"><div class="glyph">—</div>Nothing in the vault yet. Add your first account.</div>`;
+    return;
+  }
+  if (!rows.length){
+    wrap.innerHTML = `<div class="empty-state">No entries match "${escapeHtml(q)}".</div>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table class="vault-table">
+      <thead><tr>
+        <th>Website</th><th>Username</th><th>Account #</th><th>Password</th><th>Nominee</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(e => `
+          <tr data-id="${e.id}">
+            <td class="cell-site">${escapeHtml(e.website)}${e.notes ? `<div class="cell-sub">${escapeHtml(e.notes)}</div>` : ''}</td>
+            <td>
+              <span class="secret-wrap">
+                <span class="mono-val" data-copy="${escapeHtml(e.username)}">${escapeHtml(e.username)}</span>
+                <button class="icon-btn copy-btn" data-copy-target="${escapeHtml(e.username)}" title="Copy username" aria-label="Copy username">⧉</button>
+              </span>
+            </td>
+            <td><span class="mono-val">${escapeHtml(e.accountNumber || '—')}</span></td>
+            <td>
+              <span class="secret-wrap">
+                <span class="mono-val secret-dots" data-secret="${escapeHtml(e.password)}" data-revealed="false">••••••••</span>
+                <button class="icon-btn reveal-btn" title="Show password" aria-label="Show password">👁</button>
+                <button class="icon-btn copy-btn" data-copy-target="${escapeHtml(e.password)}" title="Copy password" aria-label="Copy password">⧉</button>
+              </span>
+            </td>
+            <td>${escapeHtml(e.nominee || '—')}</td>
+            <td>
+              <div class="row-actions">
+                <button class="btn btn-quiet btn-sm edit-btn">Edit</button>
+                <button class="btn btn-quiet btn-sm delete-btn">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll('.reveal-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const span = btn.previousElementSibling;
+      const revealed = span.dataset.revealed === 'true';
+      span.textContent = revealed ? '••••••••' : span.dataset.secret;
+      span.dataset.revealed = String(!revealed);
+      btn.textContent = revealed ? '👁' : '🙈';
+    });
+  });
+  wrap.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(btn.dataset.copyTarget || '');
+      const old = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => btn.textContent = old, 900);
+    });
+  });
+  wrap.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => openEntryModal(e.target.closest('tr').dataset.id));
+  });
+  wrap.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = e.target.closest('tr').dataset.id;
+      const entry = state.entries.find(x => x.id === id);
+      if (confirm(`Delete the entry for "${entry.website}"? This can't be undone once saved.`)){
+        state.entries = state.entries.filter(x => x.id !== id);
+        markDirty();
+        renderTable();
+      }
+    });
+  });
+}
+
+/* ==================================================================
+   ENTRY MODAL
+   ================================================================== */
+function openEntryModal(id){
+  state.editingId = id || null;
+  const e = id ? state.entries.find(x => x.id === id) : null;
+  $('entryModalTitle').textContent = id ? 'Edit account' : 'Add account';
+  $('f-website').value = e?.website || '';
+  $('f-username').value = e?.username || '';
+  $('f-account').value = e?.accountNumber || '';
+  $('f-password').value = e?.password || '';
+  $('f-nominee').value = e?.nominee || '';
+  $('f-notes').value = e?.notes || '';
+  $('entryModalBackdrop').classList.add('open');
+  setTimeout(() => $('f-website').focus(), 50);
+}
+function closeEntryModal(){ $('entryModalBackdrop').classList.remove('open'); }
+
+function saveEntryFromModal(){
+  const website = $('f-website').value.trim();
+  if (!website){ $('f-website').focus(); return; }
+  const payload = {
+    website,
+    username: $('f-username').value.trim(),
+    accountNumber: $('f-account').value.trim(),
+    password: $('f-password').value,
+    nominee: $('f-nominee').value.trim(),
+    notes: $('f-notes').value.trim(),
+    updated: new Date().toISOString(),
+  };
+  if (state.editingId){
+    const idx = state.entries.findIndex(x => x.id === state.editingId);
+    state.entries[idx] = { ...state.entries[idx], ...payload };
+  } else {
+    payload.id = crypto.randomUUID();
+    state.entries.push(payload);
+  }
+  markDirty();
+  closeEntryModal();
+  renderTable();
+}
+
+/* ==================================================================
+   CHANGE PASSWORD MODAL
+   ================================================================== */
+function openPwModal(){
+  $('cp-current').value = ''; $('cp-new').value = ''; $('cp-confirm').value = '';
+  $('cpError').textContent = ''; $('cpError').classList.remove('show');
+  $('pwModalBackdrop').classList.add('open');
+}
+function closePwModal(){ $('pwModalBackdrop').classList.remove('open'); }
+
+async function handleChangePassword(){
+  const err = $('cpError');
+  err.classList.remove('show');
+  const current = $('cp-current').value;
+  const next = $('cp-new').value;
+  const confirmVal = $('cp-confirm').value;
+
+  try {
+    const check = await deriveKey(current, state.salt, state.iterations);
+    // verify by attempting to decrypt a fresh encryption made with current in-memory key material
+    const testCipher = await encryptVault(state.entries, state.vaultKey);
+    await decryptVault(testCipher.ciphertext, testCipher.iv, check);
+  } catch(e){
+    err.textContent = 'Current password is incorrect.';
+    err.classList.add('show');
+    return;
+  }
+  if (next.length < 8){ err.textContent = 'New password must be at least 8 characters.'; err.classList.add('show'); return; }
+  if (next !== confirmVal){ err.textContent = 'New passwords don\u2019t match.'; err.classList.add('show'); return; }
+
+  state.salt = randomBytes(16);
+  state.iterations = 300000;
+  state.vaultKey = await deriveKey(next, state.salt, state.iterations);
+  markDirty();
+  closePwModal();
+  alert('Password changed. Click "Save changes" to write it to Drive.');
+}
+
+/* ==================================================================
+   WIRE UP
+   ================================================================== */
+window.addEventListener('load', () => {
+  const savedFileId = localStorage.getItem('ledger_fileId');
+  const savedFileName = localStorage.getItem('ledger_fileName');
+  if (savedFileId) { state.fileId = savedFileId; state.fileName = savedFileName; }
+
+  $('connectBtn').addEventListener('click', () => {
+    if (typeof google === 'undefined' || !google.accounts){
+      $('connectHint').textContent = 'Still loading Google\u2019s sign-in library — try again in a second.';
+      return;
+    }
+    if (!tokenClient) initGis();
+    requestAccess();
+  });
+
+  $('switchFileBtn').addEventListener('click', () => {
+    if (state.dirty && !confirm('You have unsaved changes that will be lost. Continue switching files?')) return;
+    localStorage.removeItem('ledger_fileId');
+    localStorage.removeItem('ledger_fileName');
+    state.fileId = null; state.fileName = null; state.vaultKey = null; state.entries = [];
+    openPickerFlow();
+  });
+
+  $('unlockBtn').addEventListener('click', handleUnlock);
+  $('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter' && $('pwConfirmField').style.display === 'none') handleUnlock(); });
+  $('pwConfirm').addEventListener('keydown', e => { if (e.key === 'Enter') handleUnlock(); });
+
+  $('lockBtn').addEventListener('click', lockVault);
+  $('saveBtn').addEventListener('click', async () => {
+    $('saveBtn').disabled = true;
+    $('saveBtn').textContent = 'Saving…';
+    try { await persistVault(); }
+    catch(e){ alert(e.message || 'Save failed.'); }
+    $('saveBtn').disabled = false;
+    $('saveBtn').textContent = 'Save changes';
+  });
+
+  $('addEntryBtn').addEventListener('click', () => openEntryModal(null));
+  $('entryCancelBtn').addEventListener('click', closeEntryModal);
+  $('entrySaveBtn').addEventListener('click', saveEntryFromModal);
+  $('searchInput').addEventListener('input', renderTable);
+
+  $('changePwBtn').addEventListener('click', openPwModal);
+  $('cpCancelBtn').addEventListener('click', closePwModal);
+  $('cpSaveBtn').addEventListener('click', handleChangePassword);
+
+  // If we already have a fileId from a previous session, skip straight to
+  // requesting a fresh token then loading the file (still requires Google
+  // sign-in each session — tokens aren't kept long-lived on purpose).
+  if (savedFileId){
+    $('connectHint').textContent = 'Reconnecting to your saved vault file…';
+  }
+
+  window.addEventListener('gapiLoadedCheck', () => {});
+});
+
+// Kick off GIS init once script loads (it's deferred, so poll briefly).
+(function waitForGis(){
+  if (typeof google !== 'undefined' && google.accounts){
+    initGis();
+  } else {
+    setTimeout(waitForGis, 150);
+  }
+})();
+</script>
+</body>
+</html>
