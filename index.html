@@ -541,28 +541,50 @@ function initGis(){
 }
 
 function requestAccess(){
+  // No `prompt` override here: let Google run its normal one-time
+  // account-chooser + consent flow. Forcing prompt:'' (silent mode) is
+  // not guaranteed to stay silent — with third-party cookies blocked
+  // (Chrome's default now) it can fall back to reopening the same
+  // sign-in screen repeatedly instead of completing.
   tokenClient.requestAccessToken();
 }
 
 let pickerApiLoaded = false;
 function loadPickerApi(){
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (pickerApiLoaded) return resolve();
-    gapi.load('picker', () => { pickerApiLoaded = true; resolve(); });
+    if (typeof gapi === 'undefined'){
+      reject(new Error('Google\u2019s API script (apis.google.com/js/api.js) never loaded. Check an ad-blocker/extension isn\u2019t blocking it.'));
+      return;
+    }
+    const timeout = setTimeout(() => reject(new Error('Timed out loading the Picker module from Google.')), 8000);
+    gapi.load('picker', {
+      callback: () => { clearTimeout(timeout); pickerApiLoaded = true; resolve(); },
+      onerror: () => { clearTimeout(timeout); reject(new Error('gapi.load(\'picker\') failed.')); },
+    });
   });
 }
 
 async function openPickerFlow(){
-  await loadPickerApi();
-  const picker = new google.picker.PickerBuilder()
-    .addView(new google.picker.DocsView().setIncludeFolders(false).setMimeTypes('application/json,text/plain'))
-    .addView(google.picker.ViewId.UPLOAD)
-    .setOAuthToken(state.accessToken)
-    .setDeveloperKey(CONFIG.API_KEY)
-    .setCallback(onPickerResult)
-    .setTitle('Select or upload your vault file')
-    .build();
-  picker.setVisible(true);
+  $('connectHint').textContent = 'Opening file picker\u2026';
+  try {
+    await loadPickerApi();
+    const picker = new google.picker.PickerBuilder()
+      .addView(new google.picker.DocsView().setIncludeFolders(false).setMimeTypes('application/json,text/plain'))
+      .addView(google.picker.ViewId.UPLOAD)
+      .setOAuthToken(state.accessToken)
+      .setDeveloperKey(CONFIG.API_KEY)
+      .setCallback(onPickerResult)
+      .setTitle('Select or upload your vault file')
+      .build();
+    picker.setVisible(true);
+    $('connectHint').textContent = '';
+  } catch (err) {
+    console.error('Picker failed to open:', err);
+    $('connectHint').textContent =
+      'Could not open the Drive file picker: ' + (err && err.message ? err.message : String(err)) +
+      ' — check your API key\u2019s referrer restriction matches this exact page URL, and that the Google Picker API is enabled.';
+  }
 }
 
 function onPickerResult(data){
