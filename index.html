@@ -568,24 +568,52 @@ function loadPickerApi(){
 
 async function openPickerFlow(){
   $('connectHint').textContent = 'Opening file picker\u2026';
+
+  // Diagnostics: log exactly what we're about to hand to Google's Picker,
+  // so a bad/missing value is visible before the library even runs.
+  console.log('[Ledger diagnostic] accessToken present:', !!state.accessToken, typeof state.accessToken);
+  console.log('[Ledger diagnostic] CONFIG.API_KEY:', CONFIG.API_KEY, typeof CONFIG.API_KEY);
+  console.log('[Ledger diagnostic] CONFIG.APP_ID:', CONFIG.APP_ID, typeof CONFIG.APP_ID);
+  console.log('[Ledger diagnostic] google defined:', typeof google, 'google.picker defined:', typeof google !== 'undefined' && typeof google.picker);
+
   try {
     await loadPickerApi();
-    const picker = new google.picker.PickerBuilder()
-      .addView(new google.picker.DocsView().setIncludeFolders(false).setMimeTypes('application/json,text/plain'))
-      .addView(google.picker.ViewId.UPLOAD)
-      .setOAuthToken(state.accessToken)
-      .setDeveloperKey(CONFIG.API_KEY)
-      .setAppId(CONFIG.APP_ID)
-      .setCallback(onPickerResult)
-      .setTitle('Select or upload your vault file')
-      .build();
+    console.log('[Ledger diagnostic] picker module loaded OK');
+
+    let picker;
+    try {
+      const builder = new google.picker.PickerBuilder();
+      console.log('[Ledger diagnostic] PickerBuilder created OK');
+      builder.addView(new google.picker.DocsView().setIncludeFolders(false).setMimeTypes('application/json,text/plain'));
+      builder.addView(google.picker.ViewId.UPLOAD);
+      builder.setOAuthToken(state.accessToken);
+      console.log('[Ledger diagnostic] after setOAuthToken OK');
+      builder.setDeveloperKey(CONFIG.API_KEY);
+      console.log('[Ledger diagnostic] after setDeveloperKey OK');
+      if (CONFIG.APP_ID && CONFIG.APP_ID !== 'YOUR_PROJECT_NUMBER'){
+        builder.setAppId(CONFIG.APP_ID);
+        console.log('[Ledger diagnostic] after setAppId OK');
+      } else {
+        console.log('[Ledger diagnostic] skipped setAppId — APP_ID not set');
+      }
+      builder.setCallback(onPickerResult);
+      builder.setTitle('Select or upload your vault file');
+      picker = builder.build();
+      console.log('[Ledger diagnostic] build() OK');
+    } catch (innerErr) {
+      console.error('[Ledger diagnostic] FAILED during builder step. Full error object:', innerErr);
+      console.error('[Ledger diagnostic] stack:', innerErr && innerErr.stack);
+      throw innerErr;
+    }
     picker.setVisible(true);
+    console.log('[Ledger diagnostic] setVisible(true) called OK');
     $('connectHint').textContent = '';
   } catch (err) {
-    console.error('Picker failed to open:', err);
+    console.error('Picker failed to open — full error:', err);
+    console.error('Picker failed to open — stack:', err && err.stack);
     $('connectHint').textContent =
       'Could not open the Drive file picker: ' + (err && err.message ? err.message : String(err)) +
-      ' — check your API key\u2019s referrer restriction matches this exact page URL, and that the Google Picker API is enabled.';
+      ' (see console for [Ledger diagnostic] lines — copy them to Claude)';
   }
 }
 
