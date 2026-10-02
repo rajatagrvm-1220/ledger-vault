@@ -735,7 +735,6 @@ async function loadFileAndProceed(){
    ================================================================== */
 function showPasswordView({ creating, warnOverwrite }){
   showView('view-password');
-  $('pwFileName').textContent = state.fileName || 'your vault file';
   $('pwConfirmField').style.display = creating ? 'block' : 'none';
   $('pwTitle').textContent = creating ? 'Set a master password' : 'Unlock vault';
   $('pwLede').innerHTML = creating
