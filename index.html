@@ -323,7 +323,8 @@
     <div class="card card-narrow">
       <h1 class="title">Open your vault</h1>
       <p class="lede">Your account details, encrypted in your browser, stored in a file on your own Google Drive. No server ever sees your data or your password.</p>
-      <button class="btn btn-primary btn-block" id="connectBtn">Connect Google Drive</button>
+      <button class="btn btn-primary btn-block" id="connectBtn">Connect Google Drive — use an existing file</button>
+      <button class="btn btn-block" id="connectNewBtn" style="margin-top:10px;">Connect Google Drive — create a new vault file</button>
       <p class="hint" id="connectHint"></p>
     </div>
   </div>
@@ -534,6 +535,8 @@ function initGis(){
       state.accessToken = resp.access_token;
       if (state.fileId) {
         loadFileAndProceed();
+      } else if (state.pendingAction === 'create') {
+        createNewDriveFile();
       } else {
         openPickerFlow();
       }
@@ -585,7 +588,6 @@ async function openPickerFlow(){
       const builder = new google.picker.PickerBuilder();
       console.log('[Ledger diagnostic] PickerBuilder created OK');
       builder.addView(new google.picker.DocsView().setIncludeFolders(false).setMimeTypes('application/json,text/plain'));
-      builder.addView(google.picker.ViewId.UPLOAD);
       builder.setOAuthToken(state.accessToken);
       console.log('[Ledger diagnostic] after setOAuthToken OK');
       builder.setDeveloperKey(CONFIG.API_KEY);
@@ -658,6 +660,34 @@ async function driveSaveFile(fileId, contentString){
   );
   if (!res.ok) throw new Error('Could not save to Drive.');
   return res.json();
+}
+
+async function createNewDriveFile(){
+  $('connectHint').textContent = 'Creating your vault file in Drive\u2026';
+  let name = prompt('Name for your new vault file:', 'ledger-vault.json');
+  if (!name) { $('connectHint').textContent = ''; return; }
+  if (!name.trim()) name = 'ledger-vault.json';
+  try {
+    const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${state.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: name.trim(), mimeType: 'application/json' }),
+    });
+    if (!res.ok) throw new Error('Drive rejected the file creation request (status ' + res.status + ').');
+    const file = await res.json();
+    state.fileId = file.id;
+    state.fileName = file.name;
+    localStorage.setItem('ledger_fileId', file.id);
+    localStorage.setItem('ledger_fileName', file.name);
+    $('connectHint').textContent = '';
+    await loadFileAndProceed();
+  } catch (err) {
+    console.error('createNewDriveFile failed:', err);
+    $('connectHint').textContent = 'Could not create the file: ' + (err && err.message ? err.message : String(err));
+  }
 }
 
 async function loadFileAndProceed(){
@@ -973,6 +1003,17 @@ window.addEventListener('load', () => {
       $('connectHint').textContent = 'Still loading Google\u2019s sign-in library — try again in a second.';
       return;
     }
+    state.pendingAction = 'pick';
+    if (!tokenClient) initGis();
+    requestAccess();
+  });
+
+  $('connectNewBtn').addEventListener('click', () => {
+    if (typeof google === 'undefined' || !google.accounts){
+      $('connectHint').textContent = 'Still loading Google\u2019s sign-in library — try again in a second.';
+      return;
+    }
+    state.pendingAction = 'create';
     if (!tokenClient) initGis();
     requestAccess();
   });
