@@ -533,31 +533,49 @@ function goHome(){
   }
 }
 
-function doLogout(){
+async function revokeTokenWithTimeout(token){
+  // The GIS library's own revoke() wrapper can hang indefinitely without
+  // ever calling its callback in some browsers. Calling Google's revoke
+  // endpoint directly, raced against a timeout, means logout always
+  // completes — worst case the token just expires naturally later.
+  try {
+    await Promise.race([
+      fetch('https://oauth2.googleapis.com/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'token=' + encodeURIComponent(token),
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('revoke timed out')), 3000)),
+    ]);
+  } catch (err) {
+    console.warn('Token revoke failed or timed out — continuing with local logout anyway:', err);
+  }
+}
+
+async function doLogout(){
   if (state.dirty && !confirm('You have unsaved changes that will be lost. Log out anyway?')) return;
   const token = state.accessToken;
-  const finish = () => {
-    state.accessToken = null;
-    state.fileId = null;
-    state.fileName = null;
-    state.vaultKey = null;
-    state.entries = [];
-    state.dirty = false;
-    state.isNewFile = false;
-    localStorage.removeItem('ledger_fileId');
-    localStorage.removeItem('ledger_fileName');
-    $('statusBar').style.display = 'none';
-    $('homeBtn').style.display = 'none';
-    $('logoutBtn').style.display = 'none';
-    $('lockBtn').style.display = 'none';
-    $('connectHint').textContent = '';
-    showView('view-connect');
-  };
-  if (token && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2 && google.accounts.oauth2.revoke){
-    google.accounts.oauth2.revoke(token, finish);
-  } else {
-    finish();
-  }
+  if (token) await revokeTokenWithTimeout(token);
+
+  state.accessToken = null;
+  state.fileId = null;
+  state.fileName = null;
+  state.vaultKey = null;
+  state.entries = [];
+  state.dirty = false;
+  state.isNewFile = false;
+  // Force a completely fresh GIS token client next login, rather than
+  // reusing one that may hold onto stale internal popup/session state
+  // from the account we just logged out of.
+  tokenClient = null;
+  localStorage.removeItem('ledger_fileId');
+  localStorage.removeItem('ledger_fileName');
+  $('statusBar').style.display = 'none';
+  $('homeBtn').style.display = 'none';
+  $('logoutBtn').style.display = 'none';
+  $('lockBtn').style.display = 'none';
+  $('connectHint').textContent = '';
+  showView('view-connect');
 }
 
 function setStatus({locked, unsynced}){
@@ -653,12 +671,13 @@ function initGis(){
 }
 
 function requestAccess(){
-  // No `prompt` override here: let Google run its normal one-time
-  // account-chooser + consent flow. Forcing prompt:'' (silent mode) is
-  // not guaranteed to stay silent — with third-party cookies blocked
-  // (Chrome's default now) it can fall back to reopening the same
-  // sign-in screen repeatedly instead of completing.
-  tokenClient.requestAccessToken();
+  // 'select_account' explicitly forces Google's account chooser every
+  // time — unlike prompt:'' (silent mode, which caused an earlier bug
+  // where it could loop instead of completing) this is a real, documented
+  // prompt value. It also means the app never silently reuses whichever
+  // account last signed in on a shared device — relevant since more than
+  // one person may use this app.
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 let pickerApiLoaded = false;
