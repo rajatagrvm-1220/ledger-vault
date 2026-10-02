@@ -315,6 +315,8 @@
     <div class="chrome-status" id="statusBar" style="display:none;">
       <span><span class="dot" id="statusDot"></span><span id="statusText">Locked</span></span>
       <button class="btn btn-quiet btn-sm" id="lockBtn" style="display:none;">Lock</button>
+      <button class="btn btn-quiet btn-sm" id="homeBtn" style="display:none;">Home</button>
+      <button class="btn btn-quiet btn-sm" id="logoutBtn" style="display:none;">Logout</button>
     </div>
   </div>
 
@@ -355,7 +357,6 @@
     <div class="top-strip">
       <span class="last-saved" id="lastSaved"></span>
       <div class="row-actions">
-        <button class="btn btn-quiet btn-sm" id="switchFileBtn">Switch vault file</button>
         <button class="btn btn-sm" id="changePwBtn">Change master password</button>
         <button class="btn btn-primary btn-sm" id="saveBtn">Save changes</button>
       </div>
@@ -453,6 +454,50 @@ function showView(id){
   $(id).classList.add('active');
 }
 
+function showAuthChrome(){
+  $('statusBar').style.display = 'flex';
+  $('homeBtn').style.display = 'inline-flex';
+  $('logoutBtn').style.display = 'inline-flex';
+}
+
+function goHome(){
+  if (state.dirty && !confirm('You have unsaved changes that will be lost. Continue to file selection?')) return;
+  if (state.accessToken){
+    openPickerFlow();
+  } else {
+    state.pendingAction = 'pick';
+    if (!tokenClient) initGis();
+    requestAccess();
+  }
+}
+
+function doLogout(){
+  if (state.dirty && !confirm('You have unsaved changes that will be lost. Log out anyway?')) return;
+  const token = state.accessToken;
+  const finish = () => {
+    state.accessToken = null;
+    state.fileId = null;
+    state.fileName = null;
+    state.vaultKey = null;
+    state.entries = [];
+    state.dirty = false;
+    state.isNewFile = false;
+    localStorage.removeItem('ledger_fileId');
+    localStorage.removeItem('ledger_fileName');
+    $('statusBar').style.display = 'none';
+    $('homeBtn').style.display = 'none';
+    $('logoutBtn').style.display = 'none';
+    $('lockBtn').style.display = 'none';
+    $('connectHint').textContent = '';
+    showView('view-connect');
+  };
+  if (token && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2 && google.accounts.oauth2.revoke){
+    google.accounts.oauth2.revoke(token, finish);
+  } else {
+    finish();
+  }
+}
+
 function setStatus({locked, unsynced}){
   $('statusBar').style.display = 'flex';
   const dot = $('statusDot');
@@ -533,6 +578,7 @@ function initGis(){
         return;
       }
       state.accessToken = resp.access_token;
+      showAuthChrome();
       if (state.fileId) {
         loadFileAndProceed();
       } else if (state.pendingAction === 'create') {
@@ -1026,13 +1072,8 @@ window.addEventListener('load', () => {
     requestAccess();
   });
 
-  $('switchFileBtn').addEventListener('click', () => {
-    if (state.dirty && !confirm('You have unsaved changes that will be lost. Continue switching files?')) return;
-    // Important: don't clear fileId/vaultKey/entries here. If the picker
-    // gets cancelled or closed, the current vault must stay fully intact
-    // and usable. State only resets once onPickerResult confirms a pick.
-    openPickerFlow();
-  });
+  $('homeBtn').addEventListener('click', goHome);
+  $('logoutBtn').addEventListener('click', doLogout);
 
   $('unlockBtn').addEventListener('click', handleUnlock);
   $('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter' && $('pwConfirmField').style.display === 'none') handleUnlock(); });
