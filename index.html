@@ -233,10 +233,20 @@
   }
   table.vault-table tbody tr:last-child td{ border-bottom: none; }
   table.vault-table tbody tr:hover{ background: rgba(255,255,255,0.02); }
-  .cell-site{ font-weight: 500; }
-  .cell-sub{ color: var(--paper-dim); font-size: 12.5px; margin-top:2px; }
+  .cell-title{
+    font-weight: 600;
+    cursor: pointer;
+    position: relative;
+  }
   .mono-val{ font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.3px; }
   .secret-wrap{ display:flex; align-items:center; gap:8px; }
+  .notes-preview{
+    cursor: pointer;
+    color: var(--paper-dim);
+    border-bottom: 1px dotted var(--line);
+  }
+  .notes-preview:hover{ color: var(--paper); border-bottom-color: var(--brass-hi); }
+  .notes-mobile-full{ display: none; }
   .secret-dots{ letter-spacing: 2px; }
   .icon-btn{
     background:none; border:none; color: var(--paper-dim);
@@ -301,9 +311,60 @@
 
   @media (max-width: 640px){
     .modal-grid{ grid-template-columns: 1fr; }
+
     table.vault-table thead{ display:none; }
-    table.vault-table tbody td{ display:block; border-bottom:none; padding: 4px 0; }
-    table.vault-table tbody tr{ display:block; padding: 14px 0; border-bottom: 1px solid var(--line); }
+    table.vault-table{ display:block; width:100%; }
+    table.vault-table tbody{ display:block; }
+    table.vault-table tbody tr{
+      display:block;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    /* Collapsed: only the title cell shows. Everything else — including
+       Actions — is hidden until the row is expanded. */
+    table.vault-table tbody td{ display:none; padding: 0; border-bottom:none; }
+    table.vault-table tbody td.cell-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 2px 0;
+    }
+    table.vault-table tbody td.cell-title::after{
+      content: '›';
+      color: var(--paper-dim);
+      font-size: 18px;
+      transition: transform .15s;
+      margin-left: 10px;
+    }
+    table.vault-table tbody tr.expanded td.cell-title::after{ transform: rotate(90deg); }
+
+    /* Expanded: reveal every field, each labeled since there's no header row. */
+    table.vault-table tbody tr.expanded td{
+      display:block;
+      padding: 10px 0 0;
+    }
+    table.vault-table tbody tr.expanded td.cell-title{ padding: 2px 0 6px; }
+    table.vault-table tbody tr.expanded td[data-label]::before{
+      content: attr(data-label);
+      display:block;
+      font-size: 11px;
+      color: var(--paper-dim);
+      margin-bottom: 3px;
+    }
+    table.vault-table tbody tr.expanded td:last-child{ padding-top: 14px; }
+
+    /* Notes: on mobile, expanding the row already shows the full note —
+       no separate truncate-then-tap step needed, so swap the desktop
+       preview span for the always-full block. */
+    table.vault-table tbody tr.expanded .cell-notes .notes-preview{ display:none; }
+    table.vault-table tbody tr.expanded .cell-notes .notes-mobile-full{
+      display:block;
+      white-space: pre-wrap;
+      color: var(--paper);
+      font-size: 14px;
+      line-height: 1.5;
+    }
   }
 </style>
 </head>
@@ -368,7 +429,7 @@
     </div>
 
     <div class="card" style="padding:0; overflow:hidden;">
-      <div id="tableWrap"></div>
+      <div id="tableWrap" style="overflow-x:auto;"></div>
     </div>
   </div>
 
@@ -382,7 +443,8 @@
   <div class="modal">
     <h2 id="entryModalTitle">Add account</h2>
     <div class="modal-grid">
-      <div class="field"><label>Website</label><input id="f-website" placeholder="example.com"></div>
+      <div class="field" style="grid-column:1/-1;"><label>Title *</label><input id="f-title" placeholder="e.g. Primary bank account"></div>
+      <div class="field"><label>Website *</label><input id="f-website" placeholder="example.com"></div>
       <div class="field"><label>Username</label><input id="f-username"></div>
       <div class="field"><label>Account number</label><input id="f-account" class="mono"></div>
       <div class="field"><label>Password</label><input id="f-password" class="mono"></div>
@@ -879,11 +941,16 @@ function escapeHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function truncateText(s, n){
+  const str = String(s || '');
+  return str.length > n ? str.slice(0, n) + '…' : str;
+}
+
 function renderTable(){
   const q = ($('searchInput').value || '').toLowerCase();
   const rows = state.entries
-    .filter(e => !q || [e.website, e.username, e.nominee].some(v => (v||'').toLowerCase().includes(q)))
-    .sort((a,b) => (a.website||'').localeCompare(b.website||''));
+    .filter(e => !q || [e.title, e.website, e.username, e.nominee].some(v => (v||'').toLowerCase().includes(q)))
+    .sort((a,b) => (a.title||a.website||'').localeCompare(b.title||b.website||''));
 
   const wrap = $('tableWrap');
   if (!state.entries.length){
@@ -898,27 +965,36 @@ function renderTable(){
   wrap.innerHTML = `
     <table class="vault-table">
       <thead><tr>
-        <th>Website</th><th>Username</th><th>Account #</th><th>Password</th><th>Nominee</th><th></th>
+        <th>Title</th><th>Website</th><th>Username</th><th>Account #</th><th>Password</th><th>Nominee</th><th>Notes</th><th></th>
       </tr></thead>
       <tbody>
-        ${rows.map(e => `
+        ${rows.map(e => {
+          const displayTitle = e.title || e.website || '(untitled)';
+          const notesFull = e.notes || '';
+          const notesPreview = notesFull ? truncateText(notesFull, 10) : '—';
+          return `
           <tr data-id="${e.id}">
-            <td class="cell-site">${escapeHtml(e.website)}${e.notes ? `<div class="cell-sub">${escapeHtml(e.notes)}</div>` : ''}</td>
-            <td>
+            <td class="cell-title">${escapeHtml(displayTitle)}</td>
+            <td data-label="Website">${escapeHtml(e.website)}</td>
+            <td data-label="Username">
               <span class="secret-wrap">
                 <span class="mono-val" data-copy="${escapeHtml(e.username)}">${escapeHtml(e.username)}</span>
                 <button class="icon-btn copy-btn" data-copy-target="${escapeHtml(e.username)}" title="Copy username" aria-label="Copy username">⧉</button>
               </span>
             </td>
-            <td><span class="mono-val">${escapeHtml(e.accountNumber || '—')}</span></td>
-            <td>
+            <td data-label="Account #"><span class="mono-val">${escapeHtml(e.accountNumber || '—')}</span></td>
+            <td data-label="Password">
               <span class="secret-wrap">
                 <span class="mono-val secret-dots" data-secret="${escapeHtml(e.password)}" data-revealed="false">••••••••</span>
                 <button class="icon-btn reveal-btn" title="Show password" aria-label="Show password">👁</button>
                 <button class="icon-btn copy-btn" data-copy-target="${escapeHtml(e.password)}" title="Copy password" aria-label="Copy password">⧉</button>
               </span>
             </td>
-            <td>${escapeHtml(e.nominee || '—')}</td>
+            <td data-label="Nominee">${escapeHtml(e.nominee || '—')}</td>
+            <td data-label="Notes" class="cell-notes">
+              <span class="notes-preview" data-full="${escapeHtml(notesFull)}" data-expanded="false">${escapeHtml(notesPreview)}</span>
+              <div class="notes-mobile-full">${escapeHtml(notesFull || '—')}</div>
+            </td>
             <td>
               <div class="row-actions">
                 <button class="btn btn-quiet btn-sm edit-btn">Edit</button>
@@ -926,13 +1002,28 @@ function renderTable(){
               </div>
             </td>
           </tr>
-        `).join('')}
+        `;}).join('')}
       </tbody>
     </table>
   `;
 
+  wrap.querySelectorAll('.cell-title').forEach(cell => {
+    cell.addEventListener('click', () => {
+      cell.closest('tr').classList.toggle('expanded');
+    });
+  });
+  wrap.querySelectorAll('.notes-preview').forEach(span => {
+    if (!span.dataset.full) return;
+    span.addEventListener('click', (ev) => {
+      ev.stopPropagation(); // don't also toggle row expand on mobile
+      const expanded = span.dataset.expanded === 'true';
+      span.textContent = expanded ? truncateText(span.dataset.full, 10) : span.dataset.full;
+      span.dataset.expanded = String(!expanded);
+    });
+  });
   wrap.querySelectorAll('.reveal-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
       const span = btn.previousElementSibling;
       const revealed = span.dataset.revealed === 'true';
       span.textContent = revealed ? '••••••••' : span.dataset.secret;
@@ -941,7 +1032,8 @@ function renderTable(){
     });
   });
   wrap.querySelectorAll('.copy-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
       await navigator.clipboard.writeText(btn.dataset.copyTarget || '');
       const old = btn.textContent;
       btn.textContent = '✓';
@@ -949,13 +1041,15 @@ function renderTable(){
     });
   });
   wrap.querySelectorAll('.edit-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => openEntryModal(e.target.closest('tr').dataset.id));
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); openEntryModal(ev.target.closest('tr').dataset.id); });
   });
   wrap.querySelectorAll('.delete-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = e.target.closest('tr').dataset.id;
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const id = ev.target.closest('tr').dataset.id;
       const entry = state.entries.find(x => x.id === id);
-      if (confirm(`Delete the entry for "${entry.website}"? This can't be undone once saved.`)){
+      const label = entry.title || entry.website;
+      if (confirm(`Delete the entry for "${label}"? This can't be undone once saved.`)){
         state.entries = state.entries.filter(x => x.id !== id);
         markDirty();
         renderTable();
@@ -971,6 +1065,7 @@ function openEntryModal(id){
   state.editingId = id || null;
   const e = id ? state.entries.find(x => x.id === id) : null;
   $('entryModalTitle').textContent = id ? 'Edit account' : 'Add account';
+  $('f-title').value = e?.title || e?.website || '';
   $('f-website').value = e?.website || '';
   $('f-username').value = e?.username || '';
   $('f-account').value = e?.accountNumber || '';
@@ -978,14 +1073,17 @@ function openEntryModal(id){
   $('f-nominee').value = e?.nominee || '';
   $('f-notes').value = e?.notes || '';
   $('entryModalBackdrop').classList.add('open');
-  setTimeout(() => $('f-website').focus(), 50);
+  setTimeout(() => $('f-title').focus(), 50);
 }
 function closeEntryModal(){ $('entryModalBackdrop').classList.remove('open'); }
 
 function saveEntryFromModal(){
+  const title = $('f-title').value.trim();
+  if (!title){ $('f-title').focus(); return; }
   const website = $('f-website').value.trim();
   if (!website){ $('f-website').focus(); return; }
   const payload = {
+    title,
     website,
     username: $('f-username').value.trim(),
     accountNumber: $('f-account').value.trim(),
