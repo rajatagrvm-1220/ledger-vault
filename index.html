@@ -568,6 +568,8 @@ async function doLogout(){
   // reusing one that may hold onto stale internal popup/session state
   // from the account we just logged out of.
   tokenClient = null;
+  // One-time cleanup only, in case this browser still has leftover keys
+  // from an older version of the app that used to persist these.
   localStorage.removeItem('ledger_fileId');
   localStorage.removeItem('ledger_fileName');
   $('statusBar').style.display = 'none';
@@ -756,8 +758,8 @@ function onPickerResult(data){
   state.dirty = false;
   state.fileId = doc.id;
   state.fileName = doc.name;
-  localStorage.setItem('ledger_fileId', doc.id);
-  localStorage.setItem('ledger_fileName', doc.name);
+  // Deliberately not persisted anywhere (no localStorage, no cache) — the
+  // file choice only lives in memory for this tab, for this session.
   loadFileAndProceed();
 }
 
@@ -812,8 +814,7 @@ async function createNewDriveFile(){
     const file = await res.json();
     state.fileId = file.id;
     state.fileName = file.name;
-    localStorage.setItem('ledger_fileId', file.id);
-    localStorage.setItem('ledger_fileName', file.name);
+    // Deliberately not persisted — in-memory only, for this session.
     $('connectHint').textContent = '';
     await loadFileAndProceed();
   } catch (err) {
@@ -1165,9 +1166,9 @@ async function handleChangePassword(){
    WIRE UP
    ================================================================== */
 window.addEventListener('load', () => {
-  const savedFileId = localStorage.getItem('ledger_fileId');
-  const savedFileName = localStorage.getItem('ledger_fileName');
-  if (savedFileId) { state.fileId = savedFileId; state.fileName = savedFileName; }
+  // No file id/name is ever read from or written to localStorage or any
+  // other persistent cache. Every session starts with nothing remembered —
+  // you always pick the file yourself via the Picker.
 
   $('connectBtn').addEventListener('click', () => {
     if (typeof google === 'undefined' || !google.accounts){
@@ -1215,14 +1216,6 @@ window.addEventListener('load', () => {
   $('cpCancelBtn').addEventListener('click', closePwModal);
   $('cpSaveBtn').addEventListener('click', handleChangePassword);
 
-  // If we already have a fileId from a previous session, skip straight to
-  // requesting a fresh token then loading the file (still requires Google
-  // sign-in each session — tokens aren't kept long-lived on purpose).
-  if (savedFileId){
-    $('connectHint').textContent = 'Reconnecting to your saved vault file…';
-  }
-
-  window.addEventListener('gapiLoadedCheck', () => {});
 });
 
 // Kick off GIS init once script loads (it's deferred, so poll briefly).
